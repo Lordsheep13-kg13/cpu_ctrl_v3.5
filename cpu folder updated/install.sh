@@ -6,7 +6,18 @@ INSTALL_DIR="/opt/cpu-control"
 DESKTOP_DIR="/usr/share/applications"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "== CPU Control v3.5 installer =="
+ORIGINAL_ARGS=("$@")
+
+escalate_privilege(){
+    local text="$1"
+    if [[ $EUID -ne 0 ]]; then
+        echo "$text"
+
+        exec sudo bash "$0" "${ORIGINAL_ARGS[@]}"
+    fi
+}
+
+do_install(){
 
 # --- Basic tool checks (run before any sudo re-exec so failures are clear) ---
 if ! command -v python3 >/dev/null 2>&1; then
@@ -14,11 +25,10 @@ if ! command -v python3 >/dev/null 2>&1; then
     exit 1
 fi
 
-if [[ $EUID -ne 0 ]]; then
-    echo "This step needs sudo to install into $INSTALL_DIR, install dependencies,"
-    echo "and register the app menu entry."
-    exec sudo bash "$0" "$@"
-fi
+
+escalate_privilege "This step needs sudo to install into $INSTALL_DIR and register the app menu entry."
+
+echo "== CPU Control v3.5 installer =="
 
 # --- System packages (apt) ---
 # PyGObject needs the actual GTK3 introspection libs; these only come from
@@ -96,3 +106,43 @@ update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
 
 echo "Done. Find 'CPU Control' in your XFCE application menu (System category),"
 echo "or launch it directly with:  python3 $INSTALL_DIR/cpu_ctrl_v3_5.py"
+
+}
+
+uninstall(){
+
+escalate_privilege "This step needs sudo to remove the $INSTALL_DIR and remove the app menu entry."
+
+echo "== CPU Control v3.5 installer =="
+
+echo "removing $DESKTOP_DIR/cpu-control.desktop"
+rm "$DESKTOP_DIR/cpu-control.desktop"
+echo "removing $INSTALL_DIR"
+rm -rf "$INSTALL_DIR"
+
+}
+
+# main function instead of no function to prevent recursion issues
+main() {
+    local action="install"
+
+    # Check for uninstall flag
+    for arg in "$@"; do
+        case "$arg" in
+            "uninstall" | "--uninstall" | "-U")
+                action="uninstall"
+                break
+                ;;
+        esac
+    done
+
+    if [[ "$action" == "install" ]]; then
+        do_install
+        exit 0
+    else
+        uninstall
+        exit 0
+    fi
+}
+
+main "$@"
